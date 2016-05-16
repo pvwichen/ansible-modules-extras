@@ -32,8 +32,8 @@ options:
         description:
             - Set this to true if you want detailed information about the services.
         required: false
-        default: 'false'
-        choices: ['true', 'false']
+        default: False
+        choices: [True, False]
     cluster:
         description:
             - The cluster ARNS in which to list the services.
@@ -56,10 +56,12 @@ EXAMPLES = '''
     cluster: test-cluster
     service: console-test-service
     details: true
+  register: console_test_service_info
 
 # Basic listing example
 - ecs_service_facts:
     cluster: test-cluster
+  register: ecs_services_info
 '''
 
 RETURN = '''
@@ -168,8 +170,7 @@ class EcsServiceManager:
         if cluster and cluster is not None:
             fn_args['cluster'] = cluster
         response = self.ecs.list_services(**fn_args)
-        relevant_response = dict(services = response['serviceArns'])
-        return relevant_response
+        self.module.exit_json(services=response['serviceArns'])
 
     def describe_services(self, cluster, services):
         fn_args = dict()
@@ -177,10 +178,11 @@ class EcsServiceManager:
             fn_args['cluster'] = cluster
         fn_args['services']=services.split(",")
         response = self.ecs.describe_services(**fn_args)
-        relevant_response = dict(services = map(self.extract_service_from, response['services']))
+        services = map(self.extract_service_from, response['services'])
+        services_not_running = None
         if 'failures' in response and len(response['failures'])>0:
-            relevant_response['services_not_running'] = response['failures']
-        return relevant_response
+            services_not_running = response['failures']
+        self.module.exit_json(services=services, services_not_running=services_not_running)
 
     def extract_service_from(self, service):
         # some fields are datetime which is not JSON serializable
@@ -220,12 +222,10 @@ def main():
     if show_details:
         if 'service' not in module.params or not module.params['service']:
             module.fail_json(msg="service must be specified for ecs_service_facts")
-        ecs_facts = task_mgr.describe_services(module.params['cluster'], module.params['service'])
+        task_mgr.describe_services(module.params['cluster'], module.params['service'])
     else:
-        ecs_facts = task_mgr.list_services(module.params['cluster'])
+        task_mgr.list_services(module.params['cluster'])
 
-    ecs_facts_result = dict(changed=False, ansible_facts=ecs_facts)
-    module.exit_json(**ecs_facts_result)
 
 # import module snippets
 from ansible.module_utils.basic import *
